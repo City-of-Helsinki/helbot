@@ -36,7 +36,7 @@ class SlackUser(object):
     @asyncio.coroutine
     def send_im(self, text):
         if self.im_channel is None:
-            raise Exception('Unable to send IM to user %s' % self['name'])
+            raise Exception('Unable to send IM to user %s' % self.data['name'])
         reply = {'type': 'message', 'channel': self.im_channel['id'],
                  'text': text}
         yield from self.connection.send_message(reply)
@@ -59,7 +59,8 @@ class SlackRTMConnection(object):
         self.data = data
         #from pprint import pprint
         #pprint(self.data)
-        pprint(self.data['ims'])
+        #pprint(self.data['ims'])
+        self.ims = data['ims']
         self.users = [SlackUser(user, self) for user in data['users']]
 
         return data['url']
@@ -71,7 +72,7 @@ class SlackRTMConnection(object):
         raise Exception("User %s not found" % user_id)
 
     def find_im_channel(self, user_id):
-        for im in self.data['ims']:
+        for im in self.ims:
             if im['user'] == user_id:
                 return im
         return None
@@ -99,6 +100,10 @@ class SlackRTMConnection(object):
                 yield from user.send_im('pong')
 
     @asyncio.coroutine
+    def handle_im_created(self, msg):
+        self.ims.append(msg['channel'])
+
+    @asyncio.coroutine
     def connect(self):
         rtm_url = yield from self.event_loop.run_in_executor(None, self.api_connect)
         log.info('connecting to %s' % rtm_url)
@@ -114,6 +119,8 @@ class SlackRTMConnection(object):
                 continue
             if msg['type'] == 'message':
                 yield from self.handle_message(msg)
+            elif msg['type'] == 'im_created':
+                yield from self.handle_im_created(msg)
 
 if __name__ == '__main__':
     event_loop = asyncio.get_event_loop()
