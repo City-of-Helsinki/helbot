@@ -7,8 +7,6 @@ import logging
 import websockets
 import json
 import motorengine as me
-import datetime
-import menu
 from pprint import pprint
 from tornado.platform.asyncio import AsyncIOMainLoop
 from tornado import gen
@@ -115,21 +113,6 @@ class SlackRTMConnection(object):
             # Direct message
             if msg['text'].strip().lower() == 'ping':
                 yield from user.send_im('pong')
-
-        elif msg['text'] == 'lounas':
-            structure = yield from self.event_loop.run_in_executor(None, menu.get_weekly_menu)
-            weekday = datetime.datetime.now().weekday()
-            weekdays = list(structure.get('menu').values())
-            text = "{title} {period}\n{dishes}".format(
-                title=structure.get('restaurant'),
-                period=structure.get('period'),
-                dishes=weekdays[weekday]
-            )
-            yield from self.send_message({
-                'type': 'message',
-                'channel': msg['channel'],
-                'text': text
-            })
 
     @asyncio.coroutine
     def handle_im_created(self, msg):

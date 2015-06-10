@@ -1,4 +1,7 @@
+import asyncio
+import bot
 import requests
+import datetime
 from collections import OrderedDict as odict
 from bs4 import BeautifulSoup
 
@@ -18,7 +21,7 @@ def get_weekly_menu():
         ('period', clean(children[1])),
         ('menu', odict())])
 
-    menu = structure.get('menu')                  
+    menu = structure.get('menu')
     for tr in menu_table[0].find_all('tr'):
         for td in tr.find_all('td'):
             classes = td.attrs.get('class')
@@ -38,6 +41,24 @@ def get_weekly_menu():
                 else:
                     meal['price'] = None
     return structure
+
+class LunchMenuImplant(bot.BotImplant):
+    @asyncio.coroutine
+    def handle_message(self, msg):
+        if msg['text'] == 'lounas':
+            structure = yield from self.bot.event_loop.run_in_executor(None, get_weekly_menu)
+            weekday = datetime.datetime.now().weekday()
+            weekdays = list(structure.get('menu').values())
+            text = "{title} {period}\n{dishes}".format(
+                title=structure.get('restaurant'),
+                period=structure.get('period'),
+                dishes=weekdays[weekday]
+            )
+            yield from self.rtm.send_event({
+                'type': 'message',
+                'channel': msg['channel'],
+                'text': text
+            })
 
 if __name__ == '__main__':
     import pprint
