@@ -128,7 +128,7 @@ class SlackRTMConnection(object):
             yield from self.send_message({
                 'type': 'message',
                 'channel': msg['channel'],
-                'text': menu.get_weekly_menu()
+                'text': text
             })
 
     @asyncio.coroutine
