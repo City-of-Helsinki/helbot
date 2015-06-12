@@ -190,19 +190,6 @@ class Bot(object):
         self.event_loop = event_loop
         self.rtm_connection = SlackRTMConnection(self)
 
-    def connect_to_mongo(self):
-        mongo_config = self.config.get('mongo', {})
-        database = mongo_config.get('database', 'helbot')
-
-        AsyncIOMainLoop().install()
-        io_loop = tornado.ioloop.IOLoop.instance()
-        me.connection.connect(database, io_loop=io_loop)
-
-    @asyncio.coroutine
-    def run(self):
-        self.connect_to_mongo()
-        yield from self.rtm_connection.connect()
-
         implants = self.config.get('implants', {})
         self.implants = []
         for im_name, im_info in implants.items():
@@ -217,8 +204,23 @@ class Bot(object):
                 raise Exception("Implant %s did not provide a BotImplant subclass" % im_name)
 
             implant = klass(self, im_info)
+            implant.name = im_name
             self.implants.append(implant)
 
+    def connect_to_mongo(self):
+        mongo_config = self.config.get('mongo', {})
+        database = mongo_config.get('database', 'helbot')
+
+        AsyncIOMainLoop().install()
+        io_loop = tornado.ioloop.IOLoop.instance()
+        me.connection.connect(database, io_loop=io_loop)
+
+    @asyncio.coroutine
+    def run(self):
+        self.connect_to_mongo()
+        yield from self.rtm_connection.connect()
+        for im in self.implants:
+            yield from im.start()
         yield from self.rtm_connection.poll()
 
     @asyncio.coroutine
