@@ -122,8 +122,14 @@ class SlackRTMConnection(object):
     def find_user(self, user_id):
         return self.users.get(user_id)
 
+    def find_user_by_name(self, name):
+        for user in self.users.values():
+            if user.name == name:
+                return user
+        return None
+
     def find_channel_by_name(self, name):
-        for ch in self.channels:
+        for ch in self.channels.values():
             if ch.name == name:
                 return ch
         return None
