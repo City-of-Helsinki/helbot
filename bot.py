@@ -9,7 +9,6 @@ import json
 import motorengine as me
 from pprint import pprint
 from tornado.platform.asyncio import AsyncIOMainLoop
-from tornado import gen
 
 log = logging.getLogger(__name__)
 
@@ -36,22 +35,64 @@ class BotImplant(object):
     def handle_message(self, event):
         pass
 
+    @asyncio.coroutine
+    def handle_im(self, event):
+        pass
+
+    @asyncio.coroutine
+    def handle_mention(self, event):
+        pass
+
 
 class SlackUser(object):
 
     def __init__(self, data, connection):
         self.data = data
-        self.id = data['id']
+        for attr, val in data.items():
+            setattr(self, attr, val)
         self.connection = connection
-        self.im_channel = connection.find_im_channel(self.id)
+        # This gets populated when channels are initialized.
+        self.im_channel = None
 
     @asyncio.coroutine
-    def send_im(self, text):
+    def send_message(self, text):
         if self.im_channel is None:
             raise Exception('Unable to send IM to user %s' % self.data['name'])
-        reply = {'type': 'message', 'channel': self.im_channel['id'],
-                 'text': text}
-        yield from self.connection.send_event(reply)
+        yield from self.im_channel.send_message(text)
+
+
+class SlackChannel(object):
+
+    def __init__(self, data, connection):
+        self.data = data
+        for attr, val in data.items():
+            if attr == 'user':
+                attr = 'user_id'
+            setattr(self, attr, val)
+        self.connection = connection
+
+        if self.get_type() == 'im':
+            self.user = self.connection.find_user(self.user_id)
+            self.user.im_channel = self
+
+    def get_type(self):
+        for type_name in ('im', 'group', 'channel'):
+            if getattr(self, 'is_' + type_name, False):
+                return type_name
+        raise Exception("Invalid type for channel %s" % self.name)
+
+    @asyncio.coroutine
+    def send_message(self, text):
+        msg = {'type': 'message', 'channel': self.id, 'text': text}
+        yield from self.connection.send_event(msg)
+
+
+class SlackMessage(object):
+
+    def __init__(self, data, connection):
+        self.data = data
+        self.text = data['text']
+        self.user = connection.find_user(data['user'])
 
 
 class SlackRTMConnection(object):
@@ -64,33 +105,31 @@ class SlackRTMConnection(object):
         self.last_message_id = 1
 
     def api_connect(self):
-        print("getting rtm url")
         params = {'token': self.token}
         log.info('retrieving RTM connection URL')
         resp = requests.get(self.api_url + 'rtm.start', params)
         assert resp.status_code == 200
         data = resp.json()
         self.data = data
-        # from pprint import pprint
-        # pprint(self.data)
         # pprint(self.data['ims'])
-        self.ims = data['ims']
-        self.users = [SlackUser(user, self) for user in data['users']]
+        all_channels = data['channels'] + data['ims'] + data['groups']
+        self.users = {user['id']: SlackUser(user, self) for user in data['users']}
+        self.channels = {ch['id']: SlackChannel(ch, self) for ch in all_channels}
         self.user_id = data['self']['id']
 
         return data['url']
 
     def find_user(self, user_id):
-        for u in self.users:
-            if u.id == user_id:
-                return u
-        raise Exception("User %s not found" % user_id)
+        return self.users.get(user_id)
 
-    def find_im_channel(self, user_id):
-        for im in self.ims:
-            if im['user'] == user_id:
-                return im
+    def find_channel_by_name(self, name):
+        for ch in self.channels:
+            if ch.name == name:
+                return ch
         return None
+
+    def find_channel(self, channel_id):
+        return self.channels.get(channel_id)
 
     @asyncio.coroutine
     def receive_event(self):
@@ -116,7 +155,8 @@ class SlackRTMConnection(object):
 
     @asyncio.coroutine
     def handle_im_created(self, msg):
-        self.ims.append(msg['channel'])
+        channel = SlackChannel(msg['channel'], self)
+        self.channels[channel.id] = channel
 
     @asyncio.coroutine
     def connect(self):
@@ -142,6 +182,7 @@ class SlackRTMConnection(object):
             # Then pass the event to the bot
             yield from self.bot.handle_slack_event(event)
 
+
 class Bot(object):
 
     def __init__(self, event_loop, config):
@@ -149,15 +190,22 @@ class Bot(object):
         self.event_loop = event_loop
         self.rtm_connection = SlackRTMConnection(self)
 
+    def connect_to_mongo(self):
+        mongo_config = self.config.get('mongo', {})
+        database = mongo_config.get('database', 'helbot')
+
+        AsyncIOMainLoop().install()
+        io_loop = tornado.ioloop.IOLoop.instance()
+        me.connection.connect(database, io_loop=io_loop)
+
     @asyncio.coroutine
     def run(self):
+        self.connect_to_mongo()
         yield from self.rtm_connection.connect()
 
         implants = self.config.get('implants', {})
         self.implants = []
         for im_name, im_info in implants.items():
-            if not im_info.get('enabled', False):
-                continue
             mod_name = "implants.{}".format(im_name)
             mod = importlib.import_module(mod_name)
             for name, klass in inspect.getmembers(mod):
@@ -177,12 +225,3 @@ class Bot(object):
     def handle_slack_event(self, event):
         for im in self.implants:
             yield from im.handle_slack_event(event)
-
-
-# class WorkLog(me.Document):
-#     username = me.StringField(required=True, unique=True)
-
-# AsyncIOMainLoop().install()
-# io_loop = tornado.ioloop.IOLoop.instance()
-
-# me.connection.connect("helbot", io_loop=io_loop)

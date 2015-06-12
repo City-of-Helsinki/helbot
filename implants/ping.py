@@ -14,7 +14,7 @@ class PingImplant(bot.BotImplant):
         if msg['channel'][0] == 'D':
             # Direct message
             if msg['text'].strip().lower() == 'ping':
-                yield from user.send_im('pong')
+                yield from user.send_message('pong')
                 return True
         else:
             # Mentions me?
