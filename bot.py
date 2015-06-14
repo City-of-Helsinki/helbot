@@ -43,6 +43,8 @@ class BotImplant(object):
     def handle_mention(self, event):
         pass
 
+    def stop(self):
+        pass
 
 class SlackUser(object):
 
@@ -62,6 +64,9 @@ class SlackUser(object):
 
 
 class SlackChannel(object):
+    user_id = None
+    name = None
+    id = None
 
     def __init__(self, data, connection):
         self.data = data
@@ -96,6 +101,11 @@ class SlackMessage(object):
 
 
 class SlackRTMConnection(object):
+    data = None
+    users = {}
+    channels = {}
+    user_id = None
+    socket = None
 
     def __init__(self, bot):
         self.bot = bot
@@ -140,6 +150,8 @@ class SlackRTMConnection(object):
     @asyncio.coroutine
     def receive_event(self):
         data = yield from self.socket.recv()
+        if data is None:
+            return None
         return json.loads(data)
 
     @asyncio.coroutine
@@ -188,6 +200,10 @@ class SlackRTMConnection(object):
             # Then pass the event to the bot
             yield from self.bot.handle_slack_event(event)
 
+    @asyncio.coroutine
+    def close(self):
+        yield from self.socket.close()
+
 
 class Bot(object):
 
@@ -233,3 +249,9 @@ class Bot(object):
     def handle_slack_event(self, event):
         for im in self.implants:
             yield from im.handle_slack_event(event)
+
+    @asyncio.coroutine
+    def stop(self):
+        for im in self.implants:
+            im.stop()
+        yield from self.rtm_connection.close()

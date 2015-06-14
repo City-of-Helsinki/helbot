@@ -65,3 +65,6 @@ class HackerNewsImplant(bot.BotImplant):
     @asyncio.coroutine
     def start(self):
         self.task = self.bot.event_loop.create_task(self.run())
+
+    def stop(self):
+        self.task.cancel()
