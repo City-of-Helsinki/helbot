@@ -29,10 +29,27 @@ class BotImplant(object):
         if 'type' not in event:
             return
         if event['type'] == 'message':
-            yield from self.handle_message(event)
+            user_id = event.get('user')
+            # If the event is sent by me, don't handle it.
+            if user_id == self.rtm.user_id:
+                return
+            if event.get('subtype') == 'message_changed':
+                yield from self.handle_message_changed(event)
+            elif event.get('subtype') == 'message_deleted':
+                yield from self.handle_message_deleted(event)
+            else:
+                yield from self.handle_message(event)
 
     @asyncio.coroutine
     def handle_message(self, event):
+        pass
+
+    @asyncio.coroutine
+    def handle_message_changed(self, event):
+        pass
+
+    @asyncio.coroutine
+    def handle_message_deleted(self, event):
         pass
 
     @asyncio.coroutine
