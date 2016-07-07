@@ -6,6 +6,8 @@ from tornado.platform.asyncio import to_asyncio_future as to_aio
 
 import bot
 
+COMMENTS_URL = "https://news.ycombinator.com/item?id={story_id}"
+
 
 class HackerNewsStory(me.Document):
     id = me.StringField(unique=True)
@@ -23,7 +25,9 @@ class HackerNewsImplant(bot.BotImplant):
     @asyncio.coroutine
     def announce_new_story(self, item):
         # Check if we've already announced the item.
-        text = '\n'.join([item['title'], item['url']])
+        comments_url = COMMENTS_URL.format(story_id=item['id'])
+        comments_str = "{} comments: {}".format(item['descendants'], comments_url)
+        text = '\n'.join(['*' + item['title'] + '*', item['url'], comments_str])
         yield from self.channel.send_message(text)
 
     @asyncio.coroutine
