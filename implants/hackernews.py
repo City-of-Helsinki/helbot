@@ -6,7 +6,6 @@ from tornado.platform.asyncio import to_asyncio_future as to_aio
 
 import bot
 
-import requests_cache
 
 class HackerNewsStory(me.Document):
     id = me.StringField(unique=True)
@@ -24,13 +23,13 @@ class HackerNewsImplant(bot.BotImplant):
     @asyncio.coroutine
     def announce_new_story(self, item):
         # Check if we've already announced the item.
-        story = HackerNewsStory
-        user = self.rtm.find_user_by_name('jey')
         text = '\n'.join([item['title'], item['url']])
-        yield from user.send_message(text)
+        yield from self.channel.send_message(text)
 
     @asyncio.coroutine
     def run(self):
+        self.channel = self.rtm.find_channel_by_name(self.config['channel'])
+
         nr_top_stories = 30
         sleep_per_story = 5 * 60 / nr_top_stories
         while self.alive:
