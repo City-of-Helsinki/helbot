@@ -33,12 +33,15 @@ class HackerNewsImplant(bot.BotImplant):
     def run(self):
         nr_top_stories = 30
         sleep_per_story = 5 * 60 / nr_top_stories
-        while True:
+        while self.alive:
             url = self.URL_BASE + 'topstories.json'
             top_stories = yield from self.async_get_json(url)
             # Go through the full list every 5 mins
             slept = 0
             for item_nr in top_stories[0:nr_top_stories]:
+                if not self.alive:
+                    break
+
                 item_nr = str(item_nr)
                 # If we have already announced the story, do not even
                 # bother fetching it.
@@ -64,7 +67,9 @@ class HackerNewsImplant(bot.BotImplant):
 
     @asyncio.coroutine
     def start(self):
+        self.alive = True
         self.task = self.bot.event_loop.create_task(self.run())
 
     def stop(self):
+        self.alive = False
         self.task.cancel()
