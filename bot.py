@@ -6,9 +6,14 @@ import requests
 import logging
 import websockets
 import json
+import sys
 import motorengine as me
+from datetime import datetime, timedelta
 from pprint import pprint
 from tornado.platform.asyncio import AsyncIOMainLoop
+
+
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
 log = logging.getLogger(__name__)
 
@@ -130,6 +135,8 @@ class SlackRTMConnection(object):
         self.api_url = 'https://slack.com/api/'
         self.event_loop = bot.event_loop
         self.last_message_id = 1
+        self.last_connection_attempt = None
+        self.alive = False
 
     def api_connect(self):
         params = {'token': self.token}
@@ -166,27 +173,22 @@ class SlackRTMConnection(object):
 
     @asyncio.coroutine
     def receive_event(self):
-        data = yield from self.socket.recv()
+        try:
+            data = yield from self.socket.recv()
+        except websockets.exceptions.ConnectionClosed:
+            return None
         if data is None:
             return None
         return json.loads(data)
 
     @asyncio.coroutine
     def send_event(self, msg):
+        if not self.socket.open:
+            return False
         msg = msg.copy()
         msg['id'] = self.last_message_id
         self.last_message_id += 1
         yield from self.socket.send(json.dumps(msg))
-
-    @asyncio.coroutine
-    def handle_message(self, msg):
-        if msg['user'] == self.data['self']['id']:
-            return
-        user = self.find_user(msg['user'])
-        if msg['channel'][0] == 'D':
-            # Direct message
-            if msg['text'].strip().lower() == 'ping':
-                yield from user.send_im('pong')
 
     @asyncio.coroutine
     def handle_im_created(self, msg):
@@ -195,15 +197,24 @@ class SlackRTMConnection(object):
 
     @asyncio.coroutine
     def connect(self):
+        if self.last_connection_attempt:
+            now = datetime.now()
+            if now - self.last_connection_attempt < timedelta(seconds=10):
+                print("Sleeping for 10 seconds")
+                yield from asyncio.sleep(10)
+        self.last_connection_attempt = datetime.now()
+
         rtm_url = yield from self.event_loop.run_in_executor(None, self.api_connect)
         log.info('connecting to %s' % rtm_url)
         self.socket = yield from websockets.connect(rtm_url)
         hello = yield from self.receive_event()
         assert hello['type'] == 'hello'
 
+        self.alive = True
+
     @asyncio.coroutine
     def poll(self):
-        while True:
+        while self.alive:
             event = yield from self.receive_event()
             if event is None:
                 break
@@ -257,10 +268,12 @@ class Bot(object):
     @asyncio.coroutine
     def run(self):
         self.connect_to_mongo()
-        yield from self.rtm_connection.connect()
-        for im in self.implants:
-            yield from im.start()
-        yield from self.rtm_connection.poll()
+        self.alive = True
+        while self.alive:
+            yield from self.rtm_connection.connect()
+            for im in self.implants:
+                yield from im.start()
+            yield from self.rtm_connection.poll()
 
     @asyncio.coroutine
     def handle_slack_event(self, event):
@@ -269,6 +282,7 @@ class Bot(object):
 
     @asyncio.coroutine
     def stop(self):
+        self.alive = False
         for im in self.implants:
             im.stop()
         yield from self.rtm_connection.close()
